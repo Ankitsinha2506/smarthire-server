@@ -30,6 +30,7 @@ const clean=value=>String(value??'').trim();
 function pick(row,...names){for(const name of names){const key=Object.keys(row).find(header=>header.trim().toLowerCase()===name.toLowerCase());if(key&&clean(row[key]))return clean(row[key])}return ''}
 function normalizedDate(value){const date=parseDate(value);return date&&!Number.isNaN(date.getTime())?date:null}
 async function readSheet(){
+  if(process.env.GOOGLE_SHEETS_ENABLED==='false')return {spreadsheetId:process.env.GOOGLE_SHEET_ID||'disabled',headers:[],rows:[]};
   const spreadsheetId=process.env.GOOGLE_SHEET_ID||'1x6e-HHjc8B5gjmBO2TxcMi-IREHlbhZxAzSN_Z_ooPg',range=process.env.GOOGLE_SHEET_RANGE||"'Form Responses 1'!A:ZZ";
   const sheets=google.sheets({version:'v4',auth:await sheetAuth()}),result=await sheets.spreadsheets.values.get({spreadsheetId,range});
   const [headers=[], ...values]=result.data.values||[];

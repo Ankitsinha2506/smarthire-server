@@ -10,10 +10,24 @@ import googleSheetRoutes from "./routes/googleSheet.js";
 
 if (!process.env.JWT_SECRET) throw new Error("JWT_SECRET is required");
 const app = express();
-app.use(cors({
-  origin: process.env.CLIENT_URL || "http://localhost:5173",
-  exposedHeaders: ["Content-Disposition"],
-}));
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://smarthire-amber.vercel.app",
+];
+
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    exposedHeaders: ["Content-Disposition"],
+    credentials: true,
+  })
+);
 app.use(express.json({ limit: "2mb" }));
 app.use("/uploads", express.static(path.resolve("uploads")));
 app.get("/api/health", (_, res) => res.json({ status: "ok" }));
