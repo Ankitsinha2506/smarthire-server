@@ -10,16 +10,17 @@ router.get('/analytics',async(req,res,next)=>{try{
   const match={};if(req.query.from||req.query.to){match.interviewDate={};if(req.query.from)match.interviewDate.$gte=new Date(req.query.from);if(req.query.to){const end=new Date(req.query.to);end.setHours(23,59,59,999);match.interviewDate.$lte=end;}}
   const todayStart=new Date();todayStart.setHours(0,0,0,0);const todayEnd=new Date(todayStart);todayEnd.setHours(23,59,59,999);
   const group=field=>Interview.aggregate([{$match:match},{$group:{_id:`$${field}`,count:{$sum:1}}},{$sort:{count:-1}},{$limit:10}]);
-  const [total,status,technology,company,trend,today,registered,activeStaff,staffUsers,upcoming,unassigned]=await Promise.all([
+  const [total,status,technology,company,trend,today,workloadItems,registered,activeStaff,staffUsers,upcoming,unassigned]=await Promise.all([
     Interview.countDocuments(match),group('status'),group('technology'),group('companyName'),
     Interview.aggregate([{$match:match},{$group:{_id:{$dateToString:{format:'%Y-%m-%d',date:'$interviewDate'}},count:{$sum:1}}},{$sort:{_id:1}},{$limit:31}]),
     Interview.find({interviewDate:{$gte:todayStart,$lte:todayEnd}}).populate('assignedStaff','name').select('candidateName interviewTime technology companyName status assignedStaff').sort({interviewTime:1}),
+    Interview.find(match).populate('assignedStaff','name').select('candidateName interviewDate assignedStaff').lean(),
     User.countDocuments({role:'user'}),User.countDocuments({role:'staff',active:true}),User.find({role:'staff',active:true}).select('name email').lean(),
     Interview.countDocuments({interviewDate:{$gt:todayEnd}}),Interview.countDocuments({...match,$or:[{assignedStaff:{$exists:false}},{assignedStaff:{$size:0}}]})
   ]);
   const selected=status.filter(x=>['Selected','Placed'].includes(x._id)).reduce((sum,x)=>sum+x.count,0);
   const placed=status.find(x=>x._id==='Placed')?.count||0,rejected=status.find(x=>x._id==='Rejected')?.count||0;
-  const staffWorkload=staffUsers.map(member=>{const assigned=today.filter(item=>item.assignedStaff.some(person=>String(person._id)===String(member._id)));return {...member,count:assigned.length,candidates:assigned.map(item=>item.candidateName)}}).sort((a,b)=>b.count-a.count);
+  const staffWorkload=staffUsers.map(member=>{const assigned=workloadItems.filter(item=>item.assignedStaff.some(person=>String(person._id)===String(member._id)));return {...member,count:assigned.length,candidates:assigned.map(item=>item.candidateName)}}).sort((a,b)=>b.count-a.count);
   const busiestTechnology=technology[0]?{name:technology[0]._id,count:technology[0].count}:null,busiestCompany=company[0]?{name:company[0]._id,count:company[0].count}:null;
   res.json({kpis:{total,today:today.length,upcoming,unassigned,registered,activeStaff,selected,placed,rejected,conversion:total?Math.round(selected/total*100):0},status,technology,company,trend,today,staffWorkload,insights:{busiestTechnology,busiestCompany,averagePerCandidate:registered?Number((total/registered).toFixed(1)):0}});
 }catch(e){next(e);}});

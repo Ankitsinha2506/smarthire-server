@@ -12,6 +12,7 @@ router.use(auth,allow('admin','staff'),permit('googleSheet'));
 
 function parseDate(value){if(!value)return null;const text=String(value).trim();const native=new Date(text);if(!Number.isNaN(native.getTime()))return native;const parts=text.split(/[\/-]/).map(Number);if(parts.length===3){const [day,month,year]=parts;const date=new Date(year<100?2000+year:year,month-1,day);if(!Number.isNaN(date.getTime()))return date}return null}
 function isToday(value){const date=parseDate(value),now=new Date();return date&&date.getFullYear()===now.getFullYear()&&date.getMonth()===now.getMonth()&&date.getDate()===now.getDate()}
+function isTomorrow(value){const date=parseDate(value),tomorrow=new Date();tomorrow.setDate(tomorrow.getDate()+1);return date&&date.getFullYear()===tomorrow.getFullYear()&&date.getMonth()===tomorrow.getMonth()&&date.getDate()===tomorrow.getDate()}
 const credentialPath=fileURLToPath(new URL('../config/google-service-account.json',import.meta.url));
 
 async function sheetAuth(){
@@ -45,7 +46,7 @@ export async function getNormalizedSheetItems(user,query={}){
   let items=rows.map(row=>({
     _id:`sheet-${row.__row}`,source:'google-sheet',sheetRow:row.__row,candidateName:pick(row,'Candidate Name'),candidateEmail:pick(row,'Candidate Email ID','Candidate Email'),candidateMobile:pick(row,'Candidate Mobile No.','Candidate Mobile No','Candidate Mobile'),interviewDate:normalizedDate(pick(row,'Interview Date')),interviewTime:pick(row,'Interview Time'),technology:pick(row,'Technology'),companyName:pick(row,'Company Name'),hrName:pick(row,'HR Name','HR Name '),hrEmail:pick(row,'HR Email'),hrMobile:pick(row,'HR Mobile No','HR Mobile No.','HR Mobile'),rounds:[pick(row,'No. of Rounds','Interview Round')].filter(Boolean),status:pick(row,'Interview Status','Status')||'Scheduled',selectedCompanyName:pick(row,'Selected Company Name'),remarks:pick(row,'Remarks'),resumeUrl:pick(row,'Upload your Resume'),introductionUrl:pick(row,'Candidate Introduction'),assignedStaff:assignmentByRow.get(row.__row)||[]
   })).filter(item=>item.candidateName);
-  if(scope==='today')items=items.filter(item=>isToday(item.interviewDate));
+  if(scope==='today')items=items.filter(item=>query.upcoming==='tomorrow'?isTomorrow(item.interviewDate):isToday(item.interviewDate));
   if(query.from){const from=new Date(query.from);from.setHours(0,0,0,0);items=items.filter(item=>item.interviewDate&&item.interviewDate>=from)}
   if(query.to){const to=new Date(query.to);to.setHours(23,59,59,999);items=items.filter(item=>item.interviewDate&&item.interviewDate<=to)}
   if(query.status)items=items.filter(item=>item.status===query.status);
