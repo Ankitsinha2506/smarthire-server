@@ -7,7 +7,7 @@ import Interview from '../models/Interview.js';
 import User from '../models/User.js';
 import AuditLog from '../models/AuditLog.js';
 import { auth, allow, permit } from '../middleware/auth.js';
-import { getNormalizedSheetItems } from './googleSheet.js';
+import { appendInterviewToSheet, getNormalizedSheetItems } from './googleSheet.js';
 
 const router = express.Router();
 const storage = multer.diskStorage({ destination: 'uploads/', filename: (_, file, cb) => cb(null, `${Date.now()}-${Math.round(Math.random()*1e9)}${path.extname(file.originalname)}`) });
@@ -149,8 +149,16 @@ router.post('/',permit('createInterview'), fields, async (req, res, next) => {
     if (req.files?.resume) body.resume = { name:req.files.resume[0].originalname,path:req.files.resume[0].filename,mimetype:req.files.resume[0].mimetype };
     if (req.files?.introduction) body.introduction = { name:req.files.introduction[0].originalname,path:req.files.introduction[0].filename,mimetype:req.files.introduction[0].mimetype };
     const item = await Interview.create(body);
-    await AuditLog.create({user:req.user._id,action:'CREATE',details:{interviewId:item._id,candidate:item.candidateName},ip:req.ip});
-    res.status(201).json(item);
+    let sheetSync;
+    try {
+      sheetSync=await appendInterviewToSheet(item);
+    } catch (error) {
+      error.status=error.status||502;
+      error.message=`Interview was saved, but Google Sheet sync failed: ${error.message}`;
+      throw error;
+    }
+    await AuditLog.create({user:req.user._id,action:'CREATE',details:{interviewId:item._id,candidate:item.candidateName,googleSheet:sheetSync},ip:req.ip});
+    res.status(201).json({...item.toObject(),sheetSync});
   } catch(e){next(e);}
 });
 

@@ -1,8 +1,11 @@
 import mongoose from 'mongoose';
 
+const validName = value => /^[A-Za-z]+(?:\s+[A-Za-z]+)*$/.test(String(value || '').trim());
+const validIndianMobile = value => /^\d{10}$/.test(String(value || '').trim());
+
 const userSchema = new mongoose.Schema({
-  name: { type: String, required: true, trim: true },
-  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+  name: { type: String, required: true, trim: true, validate: { validator: validName, message: 'Please enter a valid name.' } },
+  email: { type: String, required: true, unique: true, lowercase: true, trim: true, match: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Please enter a valid email address.'] },
   password: { type: String, required: true },
   role: { type: String, enum: ['admin', 'staff', 'user'], default: 'user' },
   permissions: {
@@ -14,7 +17,7 @@ const userSchema = new mongoose.Schema({
     googleSheet: { type: Boolean, default: false },
     googleSheetScope: { type:String, enum:['today','all'], default:'today' }
   },
-  phone: { type: String, trim: true },
+  phone: { type: String, trim: true, validate: { validator: value => !value || validIndianMobile(value), message: 'Please enter a valid 10-digit phone number.' } },
   active: { type: Boolean, default: true },
   lastLogin: Date,
   passwordChangedAt: Date,
