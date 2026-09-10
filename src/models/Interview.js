@@ -33,4 +33,10 @@ const interviewSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 interviewSchema.index({ candidateName: 'text', candidateEmail: 'text', companyName: 'text', technology: 'text' });
+interviewSchema.index({interviewDate: -1, _id: -1});
+interviewSchema.index({owner: 1, interviewDate: -1, _id: -1});
+interviewSchema.index({assignedStaff: 1, interviewDate: -1});
+interviewSchema.index({status: 1, interviewDate: -1, _id: -1});
+interviewSchema.index({technology: 1, interviewDate: -1, _id: -1});
+interviewSchema.index({candidateEmail: 1});
 export default mongoose.model('Interview', interviewSchema);

@@ -1,3 +1,5 @@
+import {submitStaffBooking} from '../services/bookingRequests.js';
+import {pagination, pageMeta, combinedPageWindow} from '../utils/pagination.js';
 import express from 'express';
 import multer from 'multer';
 import path from 'path';
@@ -32,13 +34,21 @@ function queryFrom(req) {
 router.use(auth);
 router.get('/',permit('interviews'), async (req, res, next) => {
   try {
-    const page = Math.max(Number(req.query.page) || 1, 1), limit = Math.min(Number(req.query.limit) || 10, 100);
+    const {page, limit} = pagination(req.query);
     const query = queryFrom(req);
-    const [items, total] = await Promise.all([
-      Interview.find(query).populate('owner','name email').populate('assignedStaff','name email phone').sort({ interviewDate: -1 }).skip((page-1)*limit).limit(limit),
-      Interview.countDocuments(query)
+    const includeSheet = req.query.includeSheet === 'true' && (req.user.role === 'admin' || (req.user.role === 'staff' && req.user.permissions?.googleSheet !== false));
+    const [databaseTotal, sheet] = await Promise.all([
+      Interview.countDocuments(query),
+      includeSheet ? getNormalizedSheetItems(req.user, req.query) : Promise.resolve({items: [], total: 0})
     ]);
-    res.json({ items, total, page, pages: Math.ceil(total/limit) });
+    const {offset, ...meta} = pageMeta(databaseTotal + sheet.total, page, limit);
+    // Preserve the existing Sheet-first ordering, with a single shared page boundary.
+    const {items: sheetItems, databaseOffset, databaseLimit: remaining} = combinedPageWindow(sheet.items, offset, limit);
+    const databaseItems = remaining && offset + limit > sheet.total
+      ? await Interview.find(query).populate('owner','name email').populate('assignedStaff','name email phone')
+        .sort({interviewDate: -1, _id: -1}).skip(databaseOffset).limit(remaining).lean()
+      : [];
+    res.json({...meta, items: [...sheetItems, ...databaseItems]});
   } catch (e) { next(e); }
 });
 
@@ -148,6 +158,10 @@ router.post('/',permit('createInterview'), fields, async (req, res, next) => {
     }
     if (req.files?.resume) body.resume = { name:req.files.resume[0].originalname,path:req.files.resume[0].filename,mimetype:req.files.resume[0].mimetype };
     if (req.files?.introduction) body.introduction = { name:req.files.introduction[0].originalname,path:req.files.introduction[0].filename,mimetype:req.files.introduction[0].mimetype };
+    if (req.user.role === 'staff') {
+      const request = await submitStaffBooking(body, req.user._id);
+      return res.status(201).json({request, pendingApproval: true, message: 'Request sent to admin. Your slot is not booked until approved.'});
+    }
     const item = await Interview.create(body);
     let sheetSync;
     try {

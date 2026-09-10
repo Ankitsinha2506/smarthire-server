@@ -8,4 +8,5 @@ const auditLogSchema = new mongoose.Schema({
   ip: String
 }, { timestamps: true });
 
+auditLogSchema.index({createdAt: -1, _id: -1});
 export default mongoose.model('AuditLog', auditLogSchema);

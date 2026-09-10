@@ -1,3 +1,4 @@
+import {pagination, pageMeta} from '../utils/pagination.js';
 import express from 'express';
 import {google} from 'googleapis';
 import {readFile} from 'node:fs/promises';
@@ -47,12 +48,18 @@ function localDateKey(value){
   if(!date||Number.isNaN(date.getTime()))return '';
   return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
 }
-async function readSheet(){
+let pendingRead;
+function readSheet(){
+  // Share concurrent reads only; subsequent requests still receive fresh Sheet data.
+  if(!pendingRead)pendingRead=fetchSheet().finally(()=>{pendingRead=null});
+  return pendingRead;
+}
+async function fetchSheet(){
   if(process.env.GOOGLE_SHEETS_ENABLED==='false')return {spreadsheetId:process.env.GOOGLE_SHEET_ID||'disabled',headers:[],rows:[]};
   const spreadsheetId=process.env.GOOGLE_SHEET_ID||'1x6e-HHjc8B5gjmBO2TxcMi-IREHlbhZxAzSN_Z_ooPg',range=process.env.GOOGLE_SHEET_RANGE||"'Form Responses 1'!A:ZZ";
   const sheets=google.sheets({version:'v4',auth:await sheetAuth()}),result=await sheets.spreadsheets.values.get({spreadsheetId,range});
   const [headers=[], ...values]=result.data.values||[];
-  const rows=values.filter(row=>row.some(value=>clean(value))).map((row,index)=>({__row:index+2,...Object.fromEntries(headers.map((header,column)=>[clean(header||`Column ${column+1}`),row[column]??'']))}));
+  const rows=values.map((row,index)=>({row,index})).filter(({row})=>row.some(value=>clean(value))).map(({row,index})=>({__row:index+2,...Object.fromEntries(headers.map((header,column)=>[clean(header||`Column ${column+1}`),row[column]??'']))}));
   return {spreadsheetId,headers:headers.map(String),rows};
 }
 
@@ -165,6 +172,13 @@ router.get('/',async(req,res,next)=>{try{
   const dateHeader=headers.find(header=>/interview\s*date|date/i.test(String(header)))||headers[1];
   const scope=req.user.role==='admin'?'all':req.user.permissions?.googleSheetScope||'today';
   const visible=scope==='today'?rows.filter(row=>isToday(row[dateHeader])):rows;
+  const search=clean(req.query.search).toLowerCase();
+  const filtered=search?visible.filter(row=>Object.values(row).join(' ').toLowerCase().includes(search)):visible;
+  if(req.query.page!==undefined){
+    const {page,limit}=pagination(req.query);
+    const {offset,...meta}=pageMeta(filtered.length,page,limit);
+    return res.json({...meta,headers:headers.map(String),rows:filtered.slice(offset,offset+limit),scope,dateHeader,spreadsheetId,responseTotal:visible.length});
+  }
   res.json({headers:headers.map(String),rows:visible,total:visible.length,scope,dateHeader,spreadsheetId});
 }catch(e){if(e.code===403||e.code===404)e.status=502;next(e)}});
 

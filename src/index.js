@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import mongoose from "mongoose";
 import path from "path";
+import bookingRequestRoutes from "./routes/bookingRequests.js";
 import authRoutes from "./routes/auth.js";
 import interviewRoutes from "./routes/interviews.js";
 import adminRoutes from "./routes/admin.js";
@@ -31,6 +32,7 @@ app.use(
 app.use(express.json({ limit: "2mb" }));
 app.use("/uploads", express.static(path.resolve("uploads")));
 app.get("/api/health", (_, res) => res.json({ status: "ok" }));
+app.use("/api/booking-requests", bookingRequestRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/interviews", interviewRoutes);
 app.use("/api/admin", adminRoutes);
