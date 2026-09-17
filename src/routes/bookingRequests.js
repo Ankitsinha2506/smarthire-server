@@ -14,7 +14,7 @@ router.get('/notifications', async (req, res, next) => {
     const query = req.user.role === 'admin' ? {status: 'Pending'} : {staff: req.user._id, status: {$in: ['Approved', 'Rejected']}, notificationReadAt: null};
     const [count, items] = await Promise.all([
       BookingRequest.countDocuments(query),
-      BookingRequest.find(query).select('staff status details.candidateName details.interviewDate details.interviewTime reviewedAt createdAt').populate('staff', 'name').sort({updatedAt: -1, _id: -1}).limit(5).lean()
+      BookingRequest.find(query).select('staff status details.candidateName details.interviewDate details.interviewTime details.technology reviewedAt createdAt').populate('staff', 'name').sort({updatedAt: -1, _id: -1}).limit(5).lean()
     ]);
     res.json({count, items});
   } catch (error) {next(error)}
