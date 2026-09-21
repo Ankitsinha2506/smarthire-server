@@ -14,7 +14,7 @@ router.get('/analytics',async(req,res,next)=>{try{
   const [total,status,technology,company,trend,today,workloadItems,registered,activeStaff,staffUsers,upcoming,unassigned]=await Promise.all([
     Interview.countDocuments(match),group('status'),group('technology'),group('companyName'),
     Interview.aggregate([{$match:match},{$group:{_id:{$dateToString:{format:'%Y-%m-%d',date:'$interviewDate'}},count:{$sum:1}}},{$sort:{_id:1}},{$limit:31}]),
-    Interview.find({interviewDate:{$gte:todayStart,$lte:todayEnd}}).populate('assignedStaff','name').select('candidateName interviewTime technology companyName status assignedStaff').sort({interviewTime:1}),
+    Interview.find({interviewDate:{$gte:todayStart,$lte:todayEnd}}).populate('assignedStaff','name phone').select('candidateName candidateEmail candidateMobile interviewTime technology companyName hrName hrMobile hrEmail status assignedStaff').sort({interviewTime:1}),
     Interview.find(match).populate('assignedStaff','name').select('candidateName interviewDate assignedStaff').lean(),
     User.countDocuments({role:'user'}),User.countDocuments({role:'staff',active:true}),User.find({role:'staff',active:true}).select('name email').lean(),
     Interview.countDocuments({interviewDate:{$gt:todayEnd}}),Interview.countDocuments({...match,$or:[{assignedStaff:{$exists:false}},{assignedStaff:{$size:0}}]})
