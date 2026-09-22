@@ -8,6 +8,7 @@ import GoogleSheetAssignment from '../models/GoogleSheetAssignment.js';
 import AuditLog from '../models/AuditLog.js';
 import User from '../models/User.js';
 import Interview from '../models/Interview.js';
+import {sheetRevision,editSheetResponse} from '../services/sheetEdits.js';
 
 const router=express.Router();
 router.use(auth,allow('admin','staff'),permit('googleSheet'));
@@ -60,7 +61,7 @@ async function fetchSheet(){
   const sheets=google.sheets({version:'v4',auth:await sheetAuth()}),result=await sheets.spreadsheets.values.get({spreadsheetId,range});
   const [headers=[], ...values]=result.data.values||[];
   const rows=values.map((row,index)=>({row,index})).filter(({row})=>row.some(value=>clean(value))).map(({row,index})=>({__row:index+2,...Object.fromEntries(headers.map((header,column)=>[clean(header||`Column ${column+1}`),row[column]??'']))}));
-  return {spreadsheetId,headers:headers.map(String),rows};
+  return {spreadsheetId,headers:headers.map(String),rows,range,resolvedRange:result.data.range};
 }
 
 const headerValue=(header,item)=>{
@@ -117,7 +118,7 @@ export async function getNormalizedSheetItems(user,query={}){
   const assignments=await GoogleSheetAssignment.find({spreadsheetId,sheetRow:{$in:rows.map(row=>row.__row)}}).populate('assignedStaff','name email phone').lean();
   const assignmentByRow=new Map(assignments.map(item=>[item.sheetRow,item.assignedStaff||[]]));
   let items=rows.map(row=>({
-    _id:`sheet-${row.__row}`,source:'google-sheet',sheetRow:row.__row,candidateName:pick(row,'Candidate Name'),candidateEmail:pick(row,'Candidate Email ID','Candidate Email'),candidateMobile:pick(row,'Candidate Mobile No.','Candidate Mobile No','Candidate Mobile'),interviewDate:normalizedDate(pick(row,'Interview Date')),interviewTime:pick(row,'Interview Time'),technology:pick(row,'Technology'),companyName:pick(row,'Company Name'),hrName:pick(row,'HR Name','HR Name '),hrEmail:pick(row,'HR Email'),hrMobile:pick(row,'HR Mobile No','HR Mobile No.','HR Mobile'),rounds:[pick(row,'No. of Rounds','Interview Round')].filter(Boolean),status:pick(row,'Interview Status','Status')||'Scheduled',selectedCompanyName:pick(row,'Selected Company Name'),remarks:pick(row,'Remarks'),resumeUrl:pick(row,'Upload your Resume'),introductionUrl:pick(row,'Candidate Introduction'),assignedStaff:assignmentByRow.get(row.__row)||[]
+    _id:`sheet-${row.__row}`,revision:sheetRevision(row),source:'google-sheet',sheetRow:row.__row,candidateName:pick(row,'Candidate Name'),candidateEmail:pick(row,'Candidate Email ID','Candidate Email'),candidateMobile:pick(row,'Candidate Mobile No.','Candidate Mobile No','Candidate Mobile'),interviewDate:normalizedDate(pick(row,'Interview Date')),interviewTime:pick(row,'Interview Time'),technology:pick(row,'Technology'),companyName:pick(row,'Company Name'),hrName:pick(row,'HR Name','HR Name '),hrEmail:pick(row,'HR Email'),hrMobile:pick(row,'HR Mobile No','HR Mobile No.','HR Mobile'),rounds:[pick(row,'No. of Rounds','Interview Round')].filter(Boolean),status:pick(row,'Interview Status','Status')||'Scheduled',selectedCompanyName:pick(row,'Selected Company Name'),remarks:pick(row,'Remarks'),resumeUrl:pick(row,'Upload your Resume'),introductionUrl:pick(row,'Candidate Introduction'),assignedStaff:assignmentByRow.get(row.__row)||[]
   })).filter(item=>item.candidateName);
   // Application submissions live in MongoDB and are also copied to Sheets. Keep
   // them from appearing twice in the combined interview list and Excel export.
@@ -141,6 +142,20 @@ export async function getNormalizedSheetItems(user,query={}){
 router.get('/normalized',async(req,res,next)=>{try{
   res.json(await getNormalizedSheetItems(req.user,req.query));
 }catch(e){if(e.code===403||e.code===404)e.status=502;next(e)}});
+
+router.patch('/:row',allow('admin'),async(req,res,next)=>{try{
+  const result=await editSheetResponse({
+    sheetRow:Number(req.params.row),revision:req.body.revision,changes:req.body.changes,
+    read:fetchSheet,
+    write:async payload=>{
+      const sheets=google.sheets({version:'v4',auth:await sheetAuth()});
+      await sheets.spreadsheets.values.batchUpdate(payload);
+      pendingRead=undefined;
+    },
+    audit:details=>AuditLog.create({user:req.user._id,action:'UPDATE',details:{...details,source:'google-sheet'},ip:req.ip})
+  });
+  res.json(result);
+}catch(e){if(e.code===403||e.code===404){e.status=502;e.message='Could not update the Google Sheet. Check that the connected service account has Editor access.'}next(e)}});
 
 router.patch('/:row/assignment',async(req,res,next)=>{try{
   const sheetRow=Number(req.params.row);
