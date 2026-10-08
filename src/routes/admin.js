@@ -1,6 +1,7 @@
+import {deleteStaff} from '../services/deleteStaff.js';
 import {pagination, pageMeta} from '../utils/pagination.js';
 import express from 'express';
-import bcrypt from 'bcryptjs';
+import {createStaff} from '../services/createStaff.js';
 import User from '../models/User.js';
 import AuditLog from '../models/AuditLog.js';
 import Interview from '../models/Interview.js';
@@ -35,8 +36,9 @@ router.get('/candidate-summary',async(_,res,next)=>{try{
   res.json(candidates);
 }catch(e){next(e);}});
 router.get('/users',async(req,res,next)=>{try{res.json(await User.find(req.query.internal==='true'?{role:{$in:['admin','staff']}}:{}).select('-password').sort({createdAt:-1}).lean());}catch(e){next(e);}});
-router.post('/staff',async(req,res,next)=>{try{const {name,email,password,phone,permissions}=req.body;if(!name||!email||!password||!phone)return res.status(400).json({message:'Name, email, mobile number and password are required'});const user=await User.create({name,email,password:await bcrypt.hash(password,12),phone,role:'staff',permissions});res.status(201).json({id:user._id,name:user.name,email:user.email,role:user.role,permissions:user.permissions});}catch(e){e.code===11000?res.status(409).json({message:'Email already exists'}):next(e);}});
+router.post('/staff',async(req,res,next)=>{try{res.status(201).json(await createStaff(req.body));}catch(e){e.code===11000?res.status(409).json({message:'Email already exists'}):next(e);}});
 router.patch('/users/:id',async(req,res,next)=>{try{const target=await User.findById(req.params.id);if(!target)return res.status(404).json({message:'User not found'});if(typeof req.body.active==='boolean')target.active=req.body.active;if(target.role==='staff'&&req.body.permissions){for(const key of ['dashboard','interviews','createInterview','exportInterviews','selfAssign','googleSheet'])if(typeof req.body.permissions[key]==='boolean')target.permissions[key]=req.body.permissions[key];if(['today','all'].includes(req.body.permissions.googleSheetScope))target.permissions.googleSheetScope=req.body.permissions.googleSheetScope;}await target.save();const user=target.toObject();delete user.password;res.json(user);}catch(e){next(e);}});
+router.delete('/staff/:id',async(req,res,next)=>{try{res.json(await deleteStaff({id:req.params.id,adminId:req.user._id,ip:req.ip}));}catch(error){next(error)}});
 router.get('/audit',async(req,res,next)=>{try{
   if(req.query.page===undefined)return res.json(await AuditLog.find().populate('user','name email role').sort({createdAt:-1,_id:-1}).limit(100).lean());
   const {page,limit}=pagination(req.query);

@@ -1,4 +1,5 @@
 import "dotenv/config";
+import {startSupportNotificationWorker} from "./services/supportNotifications.js";
 import express from "express";
 import cors from "cors";
 import mongoose from "mongoose";
@@ -59,6 +60,7 @@ mongoose
     console.log(`📂 Database: ${mongoose.connection.name}`);
 
     app.listen(process.env.PORT || 5000, () => {
+      startSupportNotificationWorker();
       console.log(`🚀 API running on port ${process.env.PORT || 5000}`);
     });
   })

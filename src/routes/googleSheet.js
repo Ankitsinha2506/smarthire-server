@@ -1,3 +1,4 @@
+import {syncSupportNotifications, processSupportNotifications} from '../services/supportNotifications.js';
 import {pagination, pageMeta} from '../utils/pagination.js';
 import express from 'express';
 import {google} from 'googleapis';
@@ -118,7 +119,7 @@ export async function getNormalizedSheetItems(user,query={}){
   const assignments=await GoogleSheetAssignment.find({spreadsheetId,sheetRow:{$in:rows.map(row=>row.__row)}}).populate('assignedStaff','name email phone').lean();
   const assignmentByRow=new Map(assignments.map(item=>[item.sheetRow,item.assignedStaff||[]]));
   let items=rows.map(row=>({
-    _id:`sheet-${row.__row}`,revision:sheetRevision(row),source:'google-sheet',sheetRow:row.__row,candidateName:pick(row,'Candidate Name'),candidateEmail:pick(row,'Candidate Email ID','Candidate Email'),candidateMobile:pick(row,'Candidate Mobile No.','Candidate Mobile No','Candidate Mobile'),interviewDate:normalizedDate(pick(row,'Interview Date')),interviewTime:pick(row,'Interview Time'),technology:pick(row,'Technology'),companyName:pick(row,'Company Name'),hrName:pick(row,'HR Name','HR Name '),hrEmail:pick(row,'HR Email'),hrMobile:pick(row,'HR Mobile No','HR Mobile No.','HR Mobile'),rounds:[pick(row,'No. of Rounds','Interview Round')].filter(Boolean),status:pick(row,'Interview Status','Status')||'Scheduled',selectedCompanyName:pick(row,'Selected Company Name'),remarks:pick(row,'Remarks'),resumeUrl:pick(row,'Upload your Resume'),introductionUrl:pick(row,'Candidate Introduction'),assignedStaff:assignmentByRow.get(row.__row)||[]
+    _id:`sheet-${row.__row}`,revision:sheetRevision(row),source:'google-sheet',sheetRow:row.__row,candidateName:pick(row,'Candidate Name'),candidateEmail:pick(row,'Candidate Email ID','Candidate Email'),candidateMobile:pick(row,'Candidate Mobile No.','Candidate Mobile No','Candidate Mobile'),interviewDate:normalizedDate(pick(row,'Interview Date')),interviewDateKey:localDateKey(normalizedDate(pick(row,'Interview Date'))),interviewTime:pick(row,'Interview Time'),technology:pick(row,'Technology'),companyName:pick(row,'Company Name'),hrName:pick(row,'HR Name','HR Name '),hrEmail:pick(row,'HR Email'),hrMobile:pick(row,'HR Mobile No','HR Mobile No.','HR Mobile'),rounds:[pick(row,'No. of Rounds','Interview Round')].filter(Boolean),status:pick(row,'Interview Status','Status')||'Scheduled',selectedCompanyName:pick(row,'Selected Company Name'),remarks:pick(row,'Remarks'),resumeUrl:pick(row,'Upload your Resume'),introductionUrl:pick(row,'Candidate Introduction'),assignedStaff:assignmentByRow.get(row.__row)||[]
   })).filter(item=>item.candidateName);
   // Application submissions live in MongoDB and are also copied to Sheets. Keep
   // them from appearing twice in the combined interview list and Excel export.
@@ -179,6 +180,10 @@ router.patch('/:row/assignment',async(req,res,next)=>{try{
   await assignment.save();
   await AuditLog.create({user:req.user._id,action:'UPDATE',details:{candidate:pick(sourceRow,'Candidate Name'),googleSheetRow:sheetRow,fields:['assignedStaff']},ip:req.ip});
   await assignment.populate('assignedStaff','name email phone');
+  const normalized = await getNormalizedSheetItems({role:'admin'});
+  const item = normalized.items.find(item => item.sheetRow === sheetRow);
+  if(item) await syncSupportNotifications(item, `sheet:${spreadsheetId}:${sheetRow}`);
+  void processSupportNotifications().catch(error => console.error('Support notifications:', error.message));
   res.json({sheetRow,assignedStaff:assignment.assignedStaff});
 }catch(e){next(e)}});
 

@@ -4,6 +4,7 @@ import mongoose from 'mongoose';
 // calendars, analytics, exports, or Google Sheets as confirmed bookings.
 const schema = new mongoose.Schema({
   staff: {type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true},
+  deletedStaff: {name:String,email:String},
   details: {type: mongoose.Schema.Types.Mixed, required: true},
   status: {type: String, enum: ['Pending', 'Approved', 'Rejected'], default: 'Pending'},
   reviewedBy: {type: mongoose.Schema.Types.ObjectId, ref: 'User'},

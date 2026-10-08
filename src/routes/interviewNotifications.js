@@ -1,3 +1,4 @@
+import SupportNotice from '../models/SupportNotification.js';
 import express from 'express';
 import Interview from '../models/Interview.js';
 import State from '../models/InterviewNotificationState.js';
@@ -50,6 +51,8 @@ router.get('/', async (req, res, next) => {
         items = [...items, ...await refresh(req.user, 'google-sheet', sheet.items, `${process.env.GOOGLE_SHEET_ID}:${process.env.GOOGLE_SHEET_RANGE}:${sheet.scope}`)];
       } catch {warning = 'Google Sheet notifications could not be refreshed.'}
     }
+    const support = await SupportNotice.find({staff:req.user._id, cancelled:false, readAt:null, dueAt:{$lte:new Date()}, 'details.start':{$gt:new Date()}}).sort({dueAt:-1}).limit(50).lean();
+    items = [...support.map(item => ({_id:String(item._id),source:'support',kind:item.kind,...item.details,interviewDate:item.details.start,interviewTime:new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:false}).format(item.details.start)})), ...items];
     res.json({count: items.length, items: items.slice(0, 50), warning});
   } catch (error) {next(error)}
 });
@@ -57,8 +60,13 @@ router.get('/', async (req, res, next) => {
 router.patch('/read', async (req, res, next) => {
   try {
     const {source, ids} = req.body;
-    if (!['database', 'google-sheet'].includes(source) || !Array.isArray(ids) || ids.length > 50 || ids.some(id => typeof id !== 'string')) {
+    if (!['database', 'google-sheet', 'support'].includes(source) || !Array.isArray(ids) || ids.length > 50 || ids.some(id => typeof id !== 'string')) {
       return res.status(400).json({message: 'Invalid notification selection'});
+    }
+    if(source === 'support') {
+      if(ids.some(id => !/^[a-f0-9]{24}$/i.test(id))) return res.status(400).json({message:'Invalid notification selection'});
+      await SupportNotice.updateMany({_id:{$in:ids},staff:req.user._id},{$set:{readAt:new Date()}});
+      return res.json({ok:true});
     }
     // Only acknowledge displayed IDs, so arrivals during this request stay unread.
     await State.updateOne({user: req.user._id, source}, {$pull: {unread: {$in: ids}}, $inc: {__v: 1}});

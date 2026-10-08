@@ -1,3 +1,4 @@
+import {syncSupportNotifications, processSupportNotifications} from '../services/supportNotifications.js';
 import {submitStaffBooking} from '../services/bookingRequests.js';
 import {pagination, pageMeta, combinedPageWindow} from '../utils/pagination.js';
 import express from 'express';
@@ -140,6 +141,8 @@ router.patch('/:id/staff-self',allow('staff'),permit('selfAssign'),async(req,res
   if(req.body.assigned!==false&&!assigned)item.assignedStaff.push(req.user._id);
   await item.save();
   await AuditLog.create({user:req.user._id,action:'UPDATE',details:{interviewId:item._id,candidate:item.candidateName,fields:['assignedStaff'],staffSelfAssigned:req.body.assigned!==false},ip:req.ip});
+  await syncSupportNotifications(item);
+  void processSupportNotifications().catch(error => console.error('Support notifications:', error.message));
   await item.populate('assignedStaff','name email phone');res.json(item);
 }catch(e){next(e);}});
 
@@ -190,6 +193,10 @@ router.put('/:id', allow('admin','user'), async (req, res, next) => {
     if(updates.status==='Placed'&&existing.status!=='Placed')updates.placedAt=new Date();
     if(updates.status&&updates.status!=='Placed')updates.placedAt=undefined;
     const item=await Interview.findByIdAndUpdate(req.params.id,{$set:updates},{new:true,runValidators:true});
+    if(['assignedStaff','interviewDate','interviewTime','status','companyName','technology'].some(key => key in updates)) {
+      await syncSupportNotifications(item);
+      void processSupportNotifications().catch(error => console.error('Support notifications:', error.message));
+    }
     await AuditLog.create({user:req.user._id,action:'UPDATE',details:{interviewId:item._id,candidate:item.candidateName,status:item.status,fields:Object.keys(updates)},ip:req.ip});res.json(item);
   } catch(e){next(e);}
 });
