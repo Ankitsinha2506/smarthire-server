@@ -147,7 +147,15 @@ router.patch('/:id/staff-self',allow('staff'),permit('selfAssign'),async(req,res
 }catch(e){next(e);}});
 
 router.get('/:id',permit('interviews'), async (req, res, next) => {
-  try { const item = await Interview.findById(req.params.id).populate('owner','name email').populate('assignedStaff','name email phone'); if (!item || (req.user.role==='user' && String(item.owner._id)!==String(req.user._id))) return res.status(404).json({message:'Interview not found'}); res.json(item); } catch(e){next(e);}
+  try {
+    if (/^sheet-\d+$/.test(req.params.id)) {
+      if (!(req.user.role === 'admin' || (req.user.role === 'staff' && req.user.permissions?.googleSheet !== false))) return res.status(403).json({message:'Google Sheet access is not permitted'});
+      const sheet = await getNormalizedSheetItems(req.user);
+      const item = sheet.items.find(item => item._id === req.params.id);
+      return item ? res.json(item) : res.status(404).json({message:'Interview not found'});
+    }
+    if (!/^[a-f0-9]{24}$/i.test(req.params.id)) return res.status(400).json({message:'Invalid interview'});
+    const item = await Interview.findById(req.params.id).populate('owner','name email').populate('assignedStaff','name email phone'); if (!item || (req.user.role==='user' && String(item.owner._id)!==String(req.user._id))) return res.status(404).json({message:'Interview not found'}); res.json(item); } catch(e){next(e);}
 });
 
 router.post('/',permit('createInterview'), fields, async (req, res, next) => {

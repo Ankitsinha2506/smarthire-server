@@ -22,6 +22,10 @@ router.get('/notifications', async (req, res, next) => {
 router.get('/', async (req, res, next) => {
   try {
     const query = ownRequests(req);
+    if (req.query.entry) {
+      if (!mongoose.isValidObjectId(req.query.entry)) return res.status(400).json({message:'Invalid booking request'});
+      query._id = req.query.entry;
+    }
     if (['Pending', 'Approved', 'Rejected'].includes(req.query.status)) query.status = req.query.status;
     const {page, limit} = pagination(req.query);
     const {offset, ...meta} = pageMeta(await BookingRequest.countDocuments(query), page, limit);
