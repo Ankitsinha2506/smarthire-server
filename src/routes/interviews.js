@@ -1,6 +1,7 @@
+import {compareSchedule} from '../utils/schedule.js';
 import {syncSupportNotifications, processSupportNotifications} from '../services/supportNotifications.js';
 import {submitStaffBooking} from '../services/bookingRequests.js';
-import {pagination, pageMeta, combinedPageWindow} from '../utils/pagination.js';
+import {pagination, pageMeta} from '../utils/pagination.js';
 import express from 'express';
 import multer from 'multer';
 import path from 'path';
@@ -38,18 +39,19 @@ router.get('/',permit('interviews'), async (req, res, next) => {
     const {page, limit} = pagination(req.query);
     const query = queryFrom(req);
     const includeSheet = req.query.includeSheet === 'true' && (req.user.role === 'admin' || (req.user.role === 'staff' && req.user.permissions?.googleSheet !== false));
-    const [databaseTotal, sheet] = await Promise.all([
-      Interview.countDocuments(query),
-      includeSheet ? getNormalizedSheetItems(req.user, req.query) : Promise.resolve({items: [], total: 0})
+    const [databaseSlots, sheet] = await Promise.all([
+      Interview.find(query).select('interviewDate interviewTime').lean(),
+      includeSheet ? getNormalizedSheetItems(req.user, req.query) : Promise.resolve({items: []})
     ]);
-    const {offset, ...meta} = pageMeta(databaseTotal + sheet.total, page, limit);
-    // Preserve the existing Sheet-first ordering, with a single shared page boundary.
-    const {items: sheetItems, databaseOffset, databaseLimit: remaining} = combinedPageWindow(sheet.items, offset, limit);
-    const databaseItems = remaining && offset + limit > sheet.total
-      ? await Interview.find(query).populate('owner','name email').populate('assignedStaff','name email phone')
-        .sort({interviewDate: -1, _id: -1}).skip(databaseOffset).limit(remaining).lean()
-      : [];
-    res.json({...meta, items: [...sheetItems, ...databaseItems]});
+    const slots = [...databaseSlots, ...sheet.items].sort(compareSchedule);
+    const {offset, ...meta} = pageMeta(slots.length, page, limit);
+    const window = slots.slice(offset, offset + limit);
+    const ids = window.filter(slot => slot.source !== 'google-sheet').map(slot => slot._id);
+    const records = ids.length ? await Interview.find({...query, _id: {$in: ids}})
+      .populate('owner','name email').populate('assignedStaff','name email phone').lean() : [];
+    const byId = new Map(records.map(record => [String(record._id), record]));
+    const items = window.map(slot => slot.source === 'google-sheet' ? slot : byId.get(String(slot._id))).filter(Boolean);
+    res.json({...meta, items});
   } catch (e) { next(e); }
 });
 
