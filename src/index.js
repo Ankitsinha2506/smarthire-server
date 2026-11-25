@@ -16,7 +16,7 @@ const app = express();
 const allowedOrigins = [
   "http://localhost:5173",
   "https://smarthire-amber.vercel.app",
-  "https://smarthire.nexusctc.com/"
+  "https://smarthire.nexusctc.com"
 ];
 
 app.use(
